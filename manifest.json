@@ -5,7 +5,7 @@
   "description": "Добавляет модули ДЭ в конец инструкции (с автоопределением команд)",
   "content_scripts": [
     {
-      "matches": ["*://www.altlinux.org/Sysadmin*"],
+      "matches": ["*://www.altlinux.org/*"],
       "js": ["marked.min.js", "content.js"]
     }
   ],
