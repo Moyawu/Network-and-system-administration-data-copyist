@@ -38,7 +38,7 @@ table ip nat {
 systemctl enable --now nftables
 ```
 
-HQ-RTR
+## HQ-RTR
 
 ```bash
 hostnamectl hostname HQ-RTR.{{DOMAIN}}
@@ -151,7 +151,7 @@ systemctl status frr
 systemctl status dnsmasq
 ```
 
-\ BR-RTR
+## BR-RTR
 
 ```bash
 hostnamectl hostname BR-RTR.{{DOMAIN}}
@@ -228,7 +228,7 @@ mcedit /etc/frr/daemons
 ospfd=yes
 ```
 
-\ HQ-SRV
+## HQ-SRV
 
 ```bash
 
@@ -340,16 +340,16 @@ systemctl restart network
 systemctl enable bind
 ```
 
-\ BR-RTR и HQ-RTR
+## BR-RTR и HQ-RTR
 
 ```bash
 
 systemctl stop nftables
-systemctl start nftables \через 2 минуты после остановки
+systemctl start nftables
 
 ```
 
-\ BR-SRV
+## BR-SRV
 
 ```bash
 

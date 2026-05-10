@@ -47,68 +47,71 @@ async function loadMarkdownFile(filename) {
 
 function injectStyles() {
     const style = document.createElement('style');
-    style.id = 'de-stealth-styles'; // ID нужен для удаления при kill-switch
+    style.id = 'de-stealth-styles'; 
     
-    // Анимация есть только у .active. Когда класс убирается, display: none применяется за 0ms.
     style.textContent = `
-        .de-stealth-module { display: none; margin-top: 20px; }
+        .de-stealth-module { display: none; margin-top: 15px; font-size: 13px; } /* Чуть увеличили базу */
         .de-stealth-module.active { display: block; animation: fadeIn 0.2s ease; }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
-        /* Таблица, мимикрирующая под контент MediaWiki */
         .stealth-table { 
-            width: 100%; 
-            border-collapse: collapse; 
-            margin-bottom: 1em; 
-            font-size: 14px; 
-            font-family: sans-serif;
-            color: #202122; 
+            width: 100%; border-collapse: collapse; margin-bottom: 0.8em; 
+            font-size: 13px; font-family: sans-serif; color: #202122; /* Читаемый размер для таблицы конфига */
         }
-        .stealth-table tr {
-            border-bottom: 1px solid #eaecf0; /* Тонкая линия, как в вики-списках */
-        }
-        .stealth-table td { 
-            padding: 0.4em 0.8em; 
-        }
+        .stealth-table tr { border-bottom: 1px solid #eaecf0; }
+        .stealth-table td { padding: 0.3em 0.6em; } /* Дали чуть больше воздуха ячейкам */
         .stealth-table td:first-child { 
-            background-color: #f8f9fa; /* Серый фон MediaWiki */
-            color: #54595d; 
-            width: 25%; 
-            user-select: none; 
-            font-weight: 500;
+            background-color: #f8f9fa; color: #54595d; width: 25%; 
+            user-select: none; font-weight: 500;
         }
-        .stealth-table td:last-child { 
-            cursor: text; 
-            background-color: transparent;
-        }
+        .stealth-table td:last-child { cursor: text; background-color: transparent; }
         
         .stealth-input { 
-            width: 100%; 
-            background: transparent; 
-            border: none; 
-            outline: none; 
-            font-family: monospace; 
-            font-size: 13px;
-            color: #202122; 
-            padding: 0;
+            width: 100%; background: transparent; border: none; outline: none; 
+            font-family: monospace; font-size: 13px; color: #202122; padding: 0;
         }
 
+        /* Настройки скрытого кода - возвращаем читабельность */
         .de-stealth-module pre {
+            display: none; 
             background-color: #f8f9fa !important;
             border: 1px solid #eaecf0 !important;
-            padding: 1em !important;
+            padding: 0.8em 1em !important; /* Увеличили внутренние отступы, чтобы текст не лип к краям */
             color: #202122 !important;
             white-space: pre-wrap !important;
-            font-family: monospace !important;
-            line-height: 1.3 !important;
+            font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace !important;
+            font-size: 13px !important; /* Было 11px - стало нормально */
+            line-height: 1.35 !important; /* Было 1.15 - раздвинули строки */
             border-radius: 2px;
-            margin: 0 0 1em 0 !important;
+            margin: 0 0 0.8em 0 !important;
             cursor: pointer;
+            max-height: 400px; /* Чуть увеличили высоту видимой области, раз шрифт стал больше */
+            overflow-y: auto !important;
         }
+        
+        .de-stealth-module pre.unstealth {
+            display: block !important;
+        }
+
+        .de-stealth-module pre::-webkit-scrollbar { width: 6px; }
+        .de-stealth-module pre::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+        
         .de-stealth-module pre.copied-success {
             background-color: #e8f9ee !important;
             border-color: #a3d9b8 !important;
         }
+
+        .de-stealth-module h1, .de-stealth-module h2, .de-stealth-module h3, .de-stealth-module h4 {
+            margin: 0.8em 0 0.4em 0 !important;
+            font-size: 15px !important; /* Чуть крупнее, чтобы выделялись */
+            border-bottom: none !important;
+            cursor: pointer; 
+            transition: color 0.2s ease;
+            user-select: none;
+        }
+        
+        .de-stealth-module p { margin: 0 0 0.6em 0 !important; }
+        .de-stealth-module ul, .de-stealth-module ol { margin: 0 0 0.6em 0 !important; padding-left: 1.5em !important; }
     `;
     document.head.appendChild(style);
 }
@@ -129,7 +132,50 @@ function renderUpdates() {
     if (mod1Content) mod1Content.innerHTML = compileContent(rawTemplates.mod1);
     if (mod2Content) mod2Content.innerHTML = compileContent(rawTemplates.mod2);
 
-    addInvisibleCopy(document.querySelector('.de-modules-container'));
+    const container = document.querySelector('.de-modules-container');
+    addInvisibleCopy(container); // На случай, если ты раскроешь код и кликнешь по нему
+    setupStealthHeadings(container); // Подвязываем магию к заголовкам
+}
+
+// НОВАЯ ФУНКЦИЯ: Привязка копирования и отображения к заголовкам
+function setupStealthHeadings(container) {
+    if (!container) return;
+    const headings = container.querySelectorAll('h1, h2, h3, h4');
+
+    headings.forEach(heading => {
+        let nextEl = heading.nextElementSibling;
+        let targetPre = null;
+        
+        // Ищем ближайший блок <pre> после заголовка
+        while (nextEl && !nextEl.tagName.match(/^H[1-6]$/)) {
+            if (nextEl.tagName === 'PRE') {
+                targetPre = nextEl;
+                break;
+            }
+            nextEl = nextEl.nextElementSibling;
+        }
+
+        if (targetPre) {
+            // ЛКМ (Обычный клик) - Копируем скрытый код
+            heading.addEventListener('click', (e) => {
+                if (window.getSelection().toString().length > 0) return;
+                
+                const textToCopy = targetPre.innerText.trim();
+                navigator.clipboard.writeText(textToCopy).then(() => {
+                    // Мигаем заголовком зеленым цветом
+                    const originalColor = heading.style.color;
+                    heading.style.color = '#27ae60'; 
+                    setTimeout(() => { heading.style.color = originalColor; }, 300);
+                });
+            });
+
+            // ПКМ (Правый клик) - Показать/Скрыть код
+            heading.addEventListener('contextmenu', (e) => {
+                e.preventDefault(); // Глушим появление стандартного меню браузера
+                targetPre.classList.toggle('unstealth');
+            });
+        }
+    });
 }
 
 function buildConfigTable(containerId, keysArray) {
@@ -164,7 +210,7 @@ function buildConfigTable(containerId, keysArray) {
                     renderUpdates();
                 }
                 if (e.key === 'Escape') {
-                    e.stopPropagation(); // Не прокидывать Esc дальше, чтобы не сработало скрытие модулей
+                    e.stopPropagation(); 
                     this.innerText = currentText;
                 }
             });
@@ -187,7 +233,7 @@ function addInvisibleCopy(container) {
             const textToCopy = this.innerText.trim();
             navigator.clipboard.writeText(textToCopy).then(() => {
                 this.classList.add('copied-success');
-                setTimeout(() => this.classList.remove('copied-success'), 200); // Ускорил мерцание
+                setTimeout(() => this.classList.remove('copied-success'), 200); 
             });
         };
     });
@@ -198,27 +244,20 @@ function addInvisibleCopy(container) {
 function panicHide() {
     const wrapper1 = document.getElementById('wrapper-app-1');
     const wrapper2 = document.getElementById('wrapper-app-2');
-    // Удаление класса .active применяет базовое правило display: none мгновенно (0ms)
     if (wrapper1) wrapper1.classList.remove('active');
     if (wrapper2) wrapper2.classList.remove('active');
 }
 
 function destroyExtension() {
-    // 1. Убираем HTML
     const container = document.querySelector('.de-modules-container');
     if (container) container.remove();
 
-    // 2. Убираем стили
     const style = document.getElementById('de-stealth-styles');
     if (style) style.remove();
 
-    // 3. Отписываемся от ВСЕХ событий, привязанных к signal
     abortController.abort();
-    
-    console.log("Modules offline."); // Опционально, можно убрать
 }
 
-// Переменные для каскадного тройного Esc
 let escCount = 0;
 let escTimeout;
 
@@ -254,9 +293,7 @@ async function injectModules() {
     const wrapper1 = document.getElementById('wrapper-app-1');
     const wrapper2 = document.getElementById('wrapper-app-2');
 
-    // Навешиваем события с передачей объекта { signal }
     document.addEventListener('keydown', (event) => {
-        // Хоткеи открытия
         if (event.altKey && event.code === 'Digit1') {
             event.preventDefault();
             wrapper1.classList.toggle('active');
@@ -268,36 +305,31 @@ async function injectModules() {
             if (wrapper2.classList.contains('active')) wrapper2.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
 
-        // Нестандартная паник-кнопка Ctrl+Shift+0
         if (event.ctrlKey && event.shiftKey && event.code === 'Digit0') {
             event.preventDefault();
             panicHide();
         }
 
-        // Логика каскадного Esc
         if (event.code === 'Escape') {
-            panicHide(); // Скрываем при первом же нажатии
+            panicHide(); 
             
             escCount++;
             clearTimeout(escTimeout);
             
             if (escCount >= 3) {
-                destroyExtension(); // Тройной клик - полное удаление
+                destroyExtension();
             } else {
-                // Если не нажали 3 раза за 700мс - счетчик сбрасывается
                 escTimeout = setTimeout(() => { escCount = 0; }, 700); 
             }
         }
     }, { signal });
 
-    // Детект ухода мыши в верхнюю часть окна
     document.addEventListener('mouseleave', (event) => {
         if (event.clientY <= 10) {
             panicHide();
         }
     }, { signal });
 
-    // Детект потери фокуса окна и смены вкладки
     window.addEventListener('blur', panicHide, { signal });
     document.addEventListener('visibilitychange', () => {
         if (document.hidden) panicHide();
