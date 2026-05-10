@@ -14,12 +14,12 @@ timeout = 10
 ssh_args = -o ControlMaster=auto -o ControlPersist=60s -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
 
 vim /etc/ansible/hosts
-HQ-SRV ansible_ssh_host=192.168.1.10 ansible_user=sshuser ansible_password=P@ssw0rd ansible_port=2026
-HQ-CLI ansible_ssh_host=192.168.2.10 ansible_user=user ansible_password=resu
-HQ-RTR ansible_ssh_host=192.168.1.1 ansible_user=net_admin ansible_password=P@ssw0rd
-BR-RTR ansible_ssh_host=192.168.3.1 ansible_user=net_admin ansible_password=P@ssw0rd
+HQ-SRV ansible_ssh_host={{HQ_SRV_IP_M2}} ansible_user=sshuser ansible_password={{PASS_MAIN}} ansible_port={{SSH_PORT_M2}}
+HQ-CLI ansible_ssh_host={{HQ_CLI_IP_M2}} ansible_user=user ansible_password=resu
+HQ-RTR ansible_ssh_host={{HQ_RTR_INT_M2}} ansible_user=net_admin ansible_password={{PASS_MAIN}}
+BR-RTR ansible_ssh_host={{BR_RTR_INT_M2}} ansible_user=net_admin ansible_password={{PASS_MAIN}}
 ```
-ПОСЛЕ ЧЕГО ВЕЗДЕ ОБЯЗАТЕЛЬНО ПЕРЕЗАПУСТИТЬ sshd и проверить на Hq-SRv пор 2026 в ссшд
+ПОСЛЕ ЧЕГО ВЕЗДЕ ОБЯЗАТЕЛЬНО ПЕРЕЗАПУСТИТЬ sshd и проверить на Hq-SRv пор {{SSH_PORT_M2}} в ссшд
 
 # (chrony)
 ```bash
@@ -27,8 +27,8 @@ vim /etc/chrony.conf
 pool (по умолчанию оставлять)
 local stratum 5
 # allow 0.0.0.0/0
-**allow 172.16.1.0/28** - это более правильно
-**allow 172.16.2.0/28** 
+**allow {{ISP_NET_1}}** - это более правильно
+**allow {{ISP_NET_2}}** 
 systemctl restart chronyd
 ```
 
@@ -36,8 +36,8 @@ systemctl restart chronyd
 HQ-RTR, BR-RTR, HQ-CLI, HQ-SRV, BR-SRV
 ```bash
 vim /etc/chrony.conf 
-server 172.16.1.1 iburst - HQ-RTR, HQ-CLI, HQ-SRV
-server 172.16.2.1 iburst - BR-SRV, BR-RTR
+server {{ISP_IP_1}} iburst - HQ-RTR, HQ-CLI, HQ-SRV
+server {{ISP_IP_2}} iburst - BR-SRV, BR-RTR
 #pool pool.ntp.org iburst
 ```
 
@@ -72,7 +72,7 @@ apt-get update && apt-get install -y nfs-utils nfs-clients
 mkdir /mnt/nfs
 chmod 777 /mnt/nfs
 vim /etc/fstab
-192.168.1.10:/raid/nfs /mnt/nfs       nfs     defaults     0         0
+{{HQ_SRV_IP_M2}}:/raid/nfs /mnt/nfs       nfs     defaults     0         0
 mount -a
 ```
 проверить создав текстовый файл по пути /mnt/nfs и /raid/
@@ -90,11 +90,11 @@ cp /var/lib/samba/private/krb5.conf /etc/krb5.conf
 nameserver 127.0.0.1
 kinit admin
 samba-tool group add hq
-samba-tool user add hquser1-5 P@ssw0rd
+samba-tool user add hquser1-5 {{PASS_MAIN}}
 samba-tool user setexpiry hquser 1-5 --noexpiry
 samba-tool group addmembers "hq" hquser1-5
 ```
-зайти в hq-rtr и в параметрах dnsmasq поменять dhcp-option=6, 192.168.3.10                      #  -Br-SRV
+зайти в hq-rtr и в параметрах dnsmasq поменять dhcp-option=6, {{BR_SRV_IP_M2}}                      #  -Br-SRV
 dnsmasq restart
 
 ## domain client 
@@ -119,15 +119,15 @@ sudo id для проверки
  
 # hq iptables
 ```bash
-iptables -t nat -A PREROUTING -i enp7s1 -p tcp --dport 2026 -j DNAT --to-destination 192.168.1.10:2026 - на ssh
-iptables -t nat -A PREROUTING -i enp7s1 -p tcp --dport 8080 -j DNAT --to-destination 192.168.1.10:80 - на сайт 
+iptables -t nat -A PREROUTING -i enp7s1 -p tcp --dport {{SSH_PORT_M2}} -j DNAT --to-destination {{HQ_SRV_IP_M2}}:{{SSH_PORT_M2}} - на ssh
+iptables -t nat -A PREROUTING -i enp7s1 -p tcp --dport 8080 -j DNAT --to-destination {{HQ_SRV_IP_M2}}:80 - на сайт 
 iptables - save >> /etc/sysconfig/iptables
 systemctl enable --now iptables
 ```
 # br iptables
 ```bash
-iptables -t nat -A PREROUTING -i enp7s1 -p tcp --dport 2026 -j DNAT --to-destination 192.168.3.10:2026 - на ssh
-iptables -t nat -A PREROUTING -i enp7s1 -p tcp --dport 8080 -j DNAT --to-destination 192.168.3.10:8080 - na web
+iptables -t nat -A PREROUTING -i enp7s1 -p tcp --dport {{SSH_PORT_M2}} -j DNAT --to-destination {{BR_SRV_IP_M2}}:{{SSH_PORT_M2}} - на ssh
+iptables -t nat -A PREROUTING -i enp7s1 -p tcp --dport 8080 -j DNAT --to-destination {{BR_SRV_IP_M2}}:8080 - na web
 iptables - save >> /etc/sysconfig/iptables
 systemctl enable --now iptables
 ```
@@ -140,17 +140,17 @@ apt-get install -y nginx
 cat <<EOF > /etc/nginx/sites-available.d/default.conf
 server {
     listen 80;
-    server_name web.au-team.irpo;
+    server_name web.{{DOMAIN}};
     location / {
-        proxy_pass http://172.16.1.10:8080;
+        proxy_pass http://{{ISP_IP_1}}0:8080;
     }
 }
 
 server {
     listen 80;
-    server_name docker.au-team.irpo;
+    server_name docker.{{DOMAIN}};
     location / {
-        proxy_pass http://172.16.2.10:8080;
+        proxy_pass http://{{ISP_IP_2}}0:8080;
     }
 }
 EOF
@@ -162,8 +162,8 @@ systemctl enable --now nginx
 ## hosts hq
 ```bash
 mcedit /etc/hosts
-192.168.1.10 web.au-team.irpo
-192.168.3.10 docker.au-team.irpo
+{{HQ_SRV_IP_M2}} web.{{DOMAIN}}
+{{BR_SRV_IP_M2}} docker.{{DOMAIN}}
 ```
 ## saitik
 ```bash
@@ -172,16 +172,16 @@ mount /dev/sr0 /mnt/
 cp /mnt/web/index.php /var/www/html/
 cp /mnt/web/logo.png /var/www/html/
 sed -i 's/$username = "user"/$username = "web"/' /var/www/html/index.php
-sed -i 's/$password = "password"/$password = "P@ssw0rd"/' /var/www/html/index.php
+sed -i 's/$password = "password"/$password = "{{PASS_MAIN}}"/' /var/www/html/index.php
 sed -i 's/$dbname = "db"/$dbname = "webdb"/' /var/www/html/index.php
 systemctl enable --now mariadb
 
 mariadb -u root -e "CREATE DATABASE webdb;"
-mariadb -u root -e "CREATE USER 'web'@'localhost' IDENTIFIED BY 'P@ssw0rd';"
+mariadb -u root -e "CREATE USER 'web'@'localhost' IDENTIFIED BY '{{PASS_MAIN}}';"
 mariadb -u root -e "GRANT ALL PRIVILEGES ON webdb.* TO 'web'@'localhost' WITH GRANT OPTION;"
 mariadb -u root -e "FLUSH PRIVILEGES;"
 
-mariadb -u web -pP@ssw0rd -D webdb < /mnt/web/dump.sql
+mariadb -u web -p{{PASS_MAIN}} -D webdb < /mnt/web/dump.sql
 systemctl enable --now httpd2
 ```
 
@@ -204,7 +204,7 @@ services:
     environment:
       MARIADB_DATABASE: "testdb"
       MARIADB_USER: "test"
-      MARIADB_PASSWORD: "P@ssw0rd"
+      MARIADB_PASSWORD: "{{PASS_MAIN}}"
       MARIADB_ROOT_PASSWORD: "toor"
 
   app:
@@ -215,11 +215,11 @@ services:
       - "8080:8080"
     environment:
       DB_TYPE: "maria"
-      DB_HOST: "192.168.3.10"
+      DB_HOST: "{{BR_SRV_IP_M2}}"
       DB_PORT: "3306"
       DB_NAME: "testdb"
       DB_USER: "test"
-      DB_PASS: "P@ssw0rd"
+      DB_PASS: "{{PASS_MAIN}}"
     depends_on:
       - database
 EOF
@@ -233,12 +233,12 @@ apt-get install -y apache2-htpasswd
 
 # Правильный способ создания пароля без интерактива
 ```bash
-htpasswd -b -c /etc/nginx/.htpasswd WEB P@ssw0rd
+htpasswd -b -c /etc/nginx/.htpasswd WEB {{PASS_MAIN}}
 
 cat <<EOF > /etc/nginx/sites-available.d/default.conf
 server {
     listen 80;
-    server_name web.au-team.irpo;
+    server_name web.{{DOMAIN}};
     location / {
         proxy_pass http://172.2.1.10:8080;
         auth_basic "Vnimanie";
@@ -248,9 +248,9 @@ server {
 
 server {
     listen 80;
-    server_name docker.au-team.irpo;
+    server_name docker.{{DOMAIN}};
     location / {
-        proxy_pass http://172.16.2.10:8080;
+        proxy_pass http://{{ISP_IP_2}}0:8080;
     }
 }
 EOF

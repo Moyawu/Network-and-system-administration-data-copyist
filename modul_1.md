@@ -9,15 +9,15 @@ apt-get install mcedit
 
 mkdir -p /etc/net/ifaces/ens{19,20}/
 echo 'TYPE=eth' | tee /etc/net/ifaces/ens{19,20}/options
-echo '172.16.1.1/28' > /etc/net/ifaces/ens19/ipv4address
-echo '172.16.2.1/28' > /etc/net/ifaces/ens20/ipv4address
+echo '{{ISP_IP_1}}/28' > /etc/net/ifaces/ens19/ipv4address
+echo '{{ISP_IP_2}}/28' > /etc/net/ifaces/ens20/ipv4address
 systemctl restart network
 
 mcedit /etc/net/ifaces/ens19/ipv4address
-172.16.1.1/28
+{{ISP_IP_1}}/28
 
 mcedit /etc/net/ifaces/ens20/ipv4address
-172.16.2.1/28
+{{ISP_IP_2}}/28
 
 systemctl restart network
 
@@ -41,7 +41,7 @@ systemctl enable --now nftables
 HQ-RTR
 
 ```bash
-hostnamectl hostname HQ-RTR.au-team.irpo
+hostnamectl hostname HQ-RTR.{{DOMAIN}}
 
 apt-get update
 apt-get install sudo tzdata frr dnsmasq nftables -y
@@ -54,11 +54,11 @@ mkdir -p /etc/net/ifaces/{ens19,vlan{100,200,999},gre1}
 \mkdir -p /etc/net/ifaces/gre1
 
 echo 'TYPE=eth' | tee /etc/net/ifaces/ens{18,19}/options
-echo '172.16.1.2/28' > /etc/net/ifaces/ens18/ipv4address
+echo '{{HQ_RTR_EXT}}/28' > /etc/net/ifaces/ens18/ipv4address
 \echo 'TYPE=eth' | tee /etc/net/ifaces/ens18/options
 \echo 'TYPE=eth' | tee /etc/net/ifaces/ens19/options
 
-echo 'default via 172.16.1.1' > /etc/net/ifaces/ens18/ipv4route
+echo 'default via {{ISP_IP_1}}' > /etc/net/ifaces/ens18/ipv4route
 echo 'nameserver 8.8.8.8' > /etc/net/ifaces/ens18/resolv.conf
 
 echo -e 'TYPE=vlan\nHOST=ens19\nVID=100' > /etc/net/ifaces/vlan100/options
@@ -68,15 +68,15 @@ echo -e 'TYPE=vlan\nHOST=ens19\nVID=999' > /etc/net/ifaces/vlan999/options
 mcedit /etc/net/ifaces/gre1/options
 TYPE=iptun
 TUNTYPE=gre
-TUNLOCAL=172.16.1.2
-TUNREMOTE=172.16.2.2
+TUNLOCAL={{HQ_RTR_EXT}}
+TUNREMOTE={{BR_RTR_EXT}}
 TUNTTL=64
 TUNOPTIONS='ttl 64'
 
-echo '192.168.100.1/26' > /etc/net/ifaces/vlan100/ipv4address
-echo '192.168.200.1/28' > /etc/net/ifaces/vlan200/ipv4address
-echo '192.168.99.1/29' > /etc/net/ifaces/vlan999/ipv4address
-echo "10.10.10.1/30" > /etc/net/ifaces/gre1/ipv4address
+echo '{{HQ_RTR_V100}}/26' > /etc/net/ifaces/vlan100/ipv4address
+echo '{{HQ_RTR_V200}}/28' > /etc/net/ifaces/vlan200/ipv4address
+echo '{{HQ_RTR_V999}}/29' > /etc/net/ifaces/vlan999/ipv4address
+echo "{{TUNNEL_HQ}}/30" > /etc/net/ifaces/gre1/ipv4address
 
 mcedit /etc/net/sysctl.conf
 net.ipv4.ip_forward=1
@@ -87,7 +87,7 @@ timedatectl set-timezone Europe/Moscow
 
 useradd net_admin
 passwd net_admin 
-P@ssw0rd
+{{PASS_MAIN}}
 usermod -aG wheel net_admin
 
 mcedit /etc/sudoers.d/net_admin
@@ -97,7 +97,7 @@ sudo mcedit /etc/frr/frr.conf
 interface gre1
  ip ospf area 0
  ip ospf authentification
- ip ospf authentification-key P@ssw0rd
+ ip ospf authentification-key {{PASS_MAIN}}
  no ip ospf passive
 exit
  interface vlan100
@@ -124,11 +124,11 @@ AUTO_LOCAL_RESOLVER=no
 mcedit /etc/dnsmasq.conf
 port=0
 interface=vlan200
-listen-address=192.168.200.1
+listen-address={{HQ_RTR_V200}}
 dhcp-authoritative
-dhcp-range=interface:vlan200,192.168.200.2,192.168.200.10,727h
-dhcp-option=3,192.168.200.1
-dhcp-option=6,192.168.100.2
+dhcp-range=interface:vlan200,192.168.200.2,{{HQ_RTR_V200}}0,727h
+dhcp-option=3,{{HQ_RTR_V200}}
+dhcp-option=6,{{HQ_SRV_IP_M1}}
 leasefile-ro
 
 \Don't send any default route
@@ -154,7 +154,7 @@ systemctl status dnsmasq
 \ BR-RTR
 
 ```bash
-hostnamectl hostname BR-RTR.au-team.irpo
+hostnamectl hostname BR-RTR.{{DOMAIN}}
 
 apt-get update
 apt-get install sudo tzdata frr nftables -y
@@ -164,9 +164,9 @@ mkdir -p /etc/net/ifaces/{ens{18,19},gre1}
 ls -l /etc/net/ifaces/
 
 echo 'TYPE=eth' | tee /etc/net/ifaces/ens{18,19}/options
-echo ‘172.16.2.2/28’ > /etc/net/ifaces/ens18/ipv4address
-echo ‘192.168.1.1/28’ > /etc/net/ifaces/ens19/ipv4address
-echo ‘default via 172.16.2.1’ > /etc/net/ifaces/ens18/ipv4route
+echo ‘{{BR_RTR_EXT}}/28’ > /etc/net/ifaces/ens18/ipv4address
+echo ‘{{BR_RTR_INT_M1}}/28’ > /etc/net/ifaces/ens19/ipv4address
+echo ‘default via {{ISP_IP_2}}’ > /etc/net/ifaces/ens18/ipv4route
 echo ‘nameserver 8.8.8.8’ > /etc/net/ifaces/ens18/resolv.conf
 
 mcedit /etc/net/sysctl.conf
@@ -177,16 +177,16 @@ systemctl restart network
 mcedit /etc/net/ifaces/gre1/options
 TYPE=iptun
 TUNTYPE=gre
-TUNLOCAL=172.16.2.2
-TUNREMOTE=172.16.1.2
+TUNLOCAL={{BR_RTR_EXT}}
+TUNREMOTE={{HQ_RTR_EXT}}
 TUNTTL=64
 TUNOPTIONS='ttl 64'
 
-echo "10.10.10.2/30" > /etc/net/ifaces/gre1/ipv4address/
+echo "{{TUNNEL_BR}}/30" > /etc/net/ifaces/gre1/ipv4address/
 
 mcedit /etc/net/ifaces/ens18/resolv.conf
-search au-team.irpo
-nameserver 192.168.100.2
+search {{DOMAIN}}
+nameserver {{HQ_SRV_IP_M1}}
 
 mcedit /etc/nftables/nftables.nft
 table ip nat {
@@ -202,7 +202,7 @@ timedatectl set-timezone Europe/Moscow
 
 useradd net_admin
 passwd net_admin
-P@ssw0rd
+{{PASS_MAIN}}
 usermod -aG wheel net_admin
 
 mcedit /etc/sudoers.d/net_admin
@@ -212,7 +212,7 @@ sudo mcedit /etc/frr/frr.conf
 interface gre1
  ip ospf area 0
  ip ospf authentification
- ip ospf authentification-key P@ssw0rd
+ ip ospf authentification-key {{PASS_MAIN}}
  no ip ospf passive
 exit
 interface ens19
@@ -232,7 +232,7 @@ ospfd=yes
 
 ```bash
 
-hostnamectl hostname HQ-SRV.au-team.irpo
+hostnamectl hostname HQ-SRV.{{DOMAIN}}
 
 bash
 
@@ -242,10 +242,10 @@ mcedit /etc/net/ifaces/ens18/options
 TYPE=eth
 
 mcedit /etc/net/ifaces/ens18/ipv4address
-192.168.100.2/27
+{{HQ_SRV_IP_M1}}/27
 
 mcedit /etc/net/ifaces/ens18/ipv4router
-default via 192.168.100.1
+default via {{HQ_RTR_V100}}
 
 mcedit /etc/net/ifaces/ens18/resolve.conf
 nameserver 8.8.8.8
@@ -256,7 +256,7 @@ ip -br -c a
 
 useradd -u 1010 sshuser
 passwd sshuser
-P@ssw0rd
+{{PASS_MAIN}}
 usermod -aG wheel sshuser
 
 mcedit /etc/sudoers.d/sshuser
@@ -269,7 +269,7 @@ Authrized access only
 <===================>
 
 mcedit /etc/openssh/sshd_config
-Port 2025
+Port {{SSH_PORT_M1}}
 MaxAuthTries 2
 AllowUsers sshuser
 Banner /etc/openssh/banner
@@ -299,41 +299,41 @@ options {
 };
 
 mcedit /etc/bind/local.conf
-zone "au-team.irpo" {
+zone "{{DOMAIN}}" {
 type master;
-file "au-team.irpo";
+file "{{DOMAIN}}";
 };
 zone "168.192.in-addr.arpa" {
 type master;
 file "168.192.in-addr.arpa";
 };
 
-cp /etc/bind/zone/empty /etc/bind/zone/{au-team.irpo,168.192.in-addr.arpa}
-mcedit /etc/bind/zone/au-team.irpo
-IN      SOA     au-team.irpo. root.au-team.irpo.
+cp /etc/bind/zone/empty /etc/bind/zone/{{{DOMAIN}},168.192.in-addr.arpa}
+mcedit /etc/bind/zone/{{DOMAIN}}
+IN      SOA     {{DOMAIN}}. root.{{DOMAIN}}.
 ...
-@       IN      NS      hq-srv.au-tean.irpo.
-hq-srv  IN      A       192.168.100.2
-hq-rtr  IN      A       192.168.100.1
-hq-cli  IN      A       192.168.100.2
-br-rtr  IN      A       192.168.1.1
-br-srv  IN      A       192.168.1.2
+@       IN      NS      hq-srv.{{DOMAIN}}.
+hq-srv  IN      A       {{HQ_SRV_IP_M1}}
+hq-rtr  IN      A       {{HQ_RTR_V100}}
+hq-cli  IN      A       {{HQ_SRV_IP_M1}}
+br-rtr  IN      A       {{BR_RTR_INT_M1}}
+br-srv  IN      A       {{BR_SRV_IP_M1}}
 moodle  CNAME           hq-rtr.
 wiki    CNAME           hq-rtr.
 
 mcedit /etc/bind/zone/168.192.in-addr.arpa
-IN      SOA     au-team.irpo. root.au-team.irpo.
+IN      SOA     {{DOMAIN}}. root.{{DOMAIN}}.
 ...
-@       IN      NS      au-tean.irpo.
-1.100   IN      PTR     hq-rtr.au-tean.irpo.
-2.100   IN      PTR     hq-srv.au-tean.irpo.
-2.200   IN      PTR     hq-cli.au-tean.irpo.
+@       IN      NS      {{DOMAIN}}.
+1.100   IN      PTR     hq-rtr.{{DOMAIN}}.
+2.100   IN      PTR     hq-srv.{{DOMAIN}}.
+2.200   IN      PTR     hq-cli.{{DOMAIN}}.
 
 mcedit /etc/net/ifaces/ens18/resolv.conf
-serch au-team.irpo
-nameserver 192.168.100.2
+serch {{DOMAIN}}
+nameserver {{HQ_SRV_IP_M1}}
 
-chown :named /etc/bind/zone/{168.192.in-addr.arpa,au-team.irpo}
+chown :named /etc/bind/zone/{168.192.in-addr.arpa,{{DOMAIN}}}
 
 systemctl restart bind
 systemctl restart network
@@ -361,13 +361,13 @@ mcedit /etc/net/ifaces/ens18/options
 TYPE=eth
 
 mcedit /etc/net/ifaces/ens18/ipv4router
-192.168.1.2/28
+{{BR_SRV_IP_M1}}/28
 
 mcedit /etc/net/ifaces/ens18/ipv4address
-default via 192.168.1.1
+default via {{BR_RTR_INT_M1}}
 
 mcedit /etc/net/ifaces/ens18/resolv.conf
-nameserver 192.168.100.2
+nameserver {{HQ_SRV_IP_M1}}
 
 systemctl restart network
 
@@ -386,7 +386,7 @@ Authrized access only
 <------------------->
 
 mcedit /etc/openssh/sshd_config
-Port 2025
+Port {{SSH_PORT_M1}}
 MaxAuthTries 2
 AllowUsers sshuser
 Banner /etc/openssh/banner
