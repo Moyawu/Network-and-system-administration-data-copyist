@@ -15,14 +15,17 @@ systemctl restart network
 
 mcedit /etc/net/ifaces/ens19/ipv4address
 {{ISP_IP_1}}/28
+{{EXIT_MCEDIT}}
 
 mcedit /etc/net/ifaces/ens20/ipv4address
 {{ISP_IP_2}}/28
+{{EXIT_MCEDIT}}
 
 systemctl restart network
 
 mcedit /etc/net/sysctl.conf
 net.ipv4.ip_forward=1
+{{EXIT_MCEDIT}}
 
 apt-get install nftables
 
@@ -33,7 +36,7 @@ table ip nat {
  oifname "ens18" masquerade
 }
 }
-
+{{EXIT_MCEDIT}}
 
 systemctl enable --now nftables
 ```
@@ -47,11 +50,6 @@ apt-get update
 apt-get install sudo tzdata frr dnsmasq nftables -y
 
 mkdir -p /etc/net/ifaces/{ens19,vlan{100,200,999},gre1} 
-\mkdir -p /etc/net/ifaces/ens19
-\mkdir -p /etc/net/ifaces/vlan100
-\mkdir -p /etc/net/ifaces/vlan200
-\mkdir -p /etc/net/ifaces/vlan999
-\mkdir -p /etc/net/ifaces/gre1
 
 echo 'TYPE=eth' | tee /etc/net/ifaces/ens{18,19}/options
 echo '{{HQ_RTR_EXT}}/28' > /etc/net/ifaces/ens18/ipv4address
@@ -72,6 +70,7 @@ TUNLOCAL={{HQ_RTR_EXT}}
 TUNREMOTE={{BR_RTR_EXT}}
 TUNTTL=64
 TUNOPTIONS='ttl 64'
+{{EXIT_MCEDIT}}
 
 echo '{{HQ_RTR_V100}}/26' > /etc/net/ifaces/vlan100/ipv4address
 echo '{{HQ_RTR_V200}}/28' > /etc/net/ifaces/vlan200/ipv4address
@@ -80,6 +79,7 @@ echo "{{TUNNEL_HQ}}/30" > /etc/net/ifaces/gre1/ipv4address
 
 mcedit /etc/net/sysctl.conf
 net.ipv4.ip_forward=1
+{{EXIT_MCEDIT}}
 
 systemctl restart network
 
@@ -92,6 +92,7 @@ usermod -aG wheel net_admin
 
 mcedit /etc/sudoers.d/net_admin
 WHEEL_USERS ALL=(ALL:ALL) NOPASSWD: ALL
+{{EXIT_MCEDIT}}
 
 sudo mcedit /etc/frr/frr.conf
 interface gre1
@@ -112,14 +113,17 @@ exit
 router ospf
  passive-interface default
 exit
+{{EXIT_MCEDIT}}
 
 systemctl enable frr.service
 
 mcedit /etc/frr/daemons
 ospfd=yes
+{{EXIT_MCEDIT}}
 
 mcedit /etc/syscofig/dnsmasq
 AUTO_LOCAL_RESOLVER=no
+{{EXIT_MCEDIT}}
 
 mcedit /etc/dnsmasq.conf
 port=0
@@ -130,6 +134,7 @@ dhcp-range=interface:vlan200,192.168.200.2,{{HQ_RTR_V200}}0,727h
 dhcp-option=3,{{HQ_RTR_V200}}
 dhcp-option=6,{{HQ_SRV_IP_M1}}
 leasefile-ro
+{{EXIT_MCEDIT}}
 
 \Don't send any default route
 \dhcp-option=3
@@ -145,6 +150,7 @@ table ip nat {
     oifname "ens18" masquerade
   }
 }
+{{EXIT_MCEDIT}}
 
 systemctl enable --now nftables
 systemctl status frr
@@ -171,6 +177,7 @@ echo ‘nameserver 8.8.8.8’ > /etc/net/ifaces/ens18/resolv.conf
 
 mcedit /etc/net/sysctl.conf
 net.ipv4.conf.ip_forward = 1
+{{EXIT_MCEDIT}}
 
 systemctl restart network
 
@@ -181,12 +188,14 @@ TUNLOCAL={{BR_RTR_EXT}}
 TUNREMOTE={{HQ_RTR_EXT}}
 TUNTTL=64
 TUNOPTIONS='ttl 64'
+{{EXIT_MCEDIT}}
 
 echo "{{TUNNEL_BR}}/30" > /etc/net/ifaces/gre1/ipv4address/
 
 mcedit /etc/net/ifaces/ens18/resolv.conf
 search {{DOMAIN}}
 nameserver {{HQ_SRV_IP_M1}}
+{{EXIT_MCEDIT}}
 
 mcedit /etc/nftables/nftables.nft
 table ip nat {
@@ -195,6 +204,7 @@ table ip nat {
     oifname "ens18" masquerade
   }
 }
+{{EXIT_MCEDIT}}
 
 systemctl enable --now nftables
 
@@ -207,6 +217,7 @@ usermod -aG wheel net_admin
 
 mcedit /etc/sudoers.d/net_admin
 WHEEL_USERS ALL=(ALL:ALL) NOPASSWD: ALL
+{{EXIT_MCEDIT}}
 
 sudo mcedit /etc/frr/frr.conf
 interface gre1
@@ -221,6 +232,7 @@ exit
 router ospf
  passive-interface default
 exit
+{{EXIT_MCEDIT}}
 
 systemctl enable frr.service
 
@@ -240,15 +252,19 @@ timedatactl set-timezone Europe/Moskow
 
 mcedit /etc/net/ifaces/ens18/options
 TYPE=eth
+{{EXIT_MCEDIT}}
 
 mcedit /etc/net/ifaces/ens18/ipv4address
 {{HQ_SRV_IP_M1}}/27
+{{EXIT_MCEDIT}}
 
 mcedit /etc/net/ifaces/ens18/ipv4router
 default via {{HQ_RTR_V100}}
+{{EXIT_MCEDIT}}
 
 mcedit /etc/net/ifaces/ens18/resolve.conf
 nameserver 8.8.8.8
+{{EXIT_MCEDIT}}
 
 systemctl restart network
 
@@ -261,18 +277,21 @@ usermod -aG wheel sshuser
 
 mcedit /etc/sudoers.d/sshuser
 WHEEL_USERS ALL=(ALL:ALL) NOPASSWD: ALL
+{{EXIT_MCEDIT}}
 
 mcedit /etc/openssh/banner
 ---------------------
 Authrized access only
 =====================
 <===================>
+{{EXIT_MCEDIT}}
 
 mcedit /etc/openssh/sshd_config
 Port {{SSH_PORT_M1}}
 MaxAuthTries 2
 AllowUsers sshuser
 Banner /etc/openssh/banner
+{{EXIT_MCEDIT}}
 
 systemctl restart sshd
 
@@ -297,6 +316,7 @@ options {
     allow-recursion { any; };
     dnssec-validation no;
 };
+{{EXIT_MCEDIT}}
 
 mcedit /etc/bind/local.conf
 zone "{{DOMAIN}}" {
@@ -307,6 +327,7 @@ zone "168.192.in-addr.arpa" {
 type master;
 file "168.192.in-addr.arpa";
 };
+{{EXIT_MCEDIT}}
 
 cp /etc/bind/zone/empty /etc/bind/zone/{{{DOMAIN}},168.192.in-addr.arpa}
 mcedit /etc/bind/zone/{{DOMAIN}}
@@ -320,6 +341,7 @@ br-rtr  IN      A       {{BR_RTR_INT_M1}}
 br-srv  IN      A       {{BR_SRV_IP_M1}}
 moodle  CNAME           hq-rtr.
 wiki    CNAME           hq-rtr.
+{{EXIT_MCEDIT}}
 
 mcedit /etc/bind/zone/168.192.in-addr.arpa
 IN      SOA     {{DOMAIN}}. root.{{DOMAIN}}.
@@ -328,10 +350,12 @@ IN      SOA     {{DOMAIN}}. root.{{DOMAIN}}.
 1.100   IN      PTR     hq-rtr.{{DOMAIN}}.
 2.100   IN      PTR     hq-srv.{{DOMAIN}}.
 2.200   IN      PTR     hq-cli.{{DOMAIN}}.
+{{EXIT_MCEDIT}}
 
 mcedit /etc/net/ifaces/ens18/resolv.conf
 serch {{DOMAIN}}
 nameserver {{HQ_SRV_IP_M1}}
+{{EXIT_MCEDIT}}
 
 chown :named /etc/bind/zone/{168.192.in-addr.arpa,{{DOMAIN}}}
 
@@ -359,15 +383,19 @@ timedatectl set-timezone Europe/Moscow
 
 mcedit /etc/net/ifaces/ens18/options
 TYPE=eth
+{{EXIT_MCEDIT}}
 
 mcedit /etc/net/ifaces/ens18/ipv4router
 {{BR_SRV_IP_M1}}/28
+{{EXIT_MCEDIT}}
 
 mcedit /etc/net/ifaces/ens18/ipv4address
 default via {{BR_RTR_INT_M1}}
+{{EXIT_MCEDIT}}
 
 mcedit /etc/net/ifaces/ens18/resolv.conf
 nameserver {{HQ_SRV_IP_M1}}
+{{EXIT_MCEDIT}}
 
 systemctl restart network
 
@@ -377,6 +405,7 @@ usermod -aG wheel sshuser
 
 mcedit /etc/sudoers.d/sshuser
 WHEEL_USERS ALL=(ALL:ALL) NOPASSWD: ALL
+{{EXIT_MCEDIT}}
 
 mcedit /etc/openssh/banner
 
@@ -384,12 +413,14 @@ mcedit /etc/openssh/banner
 Authrized access only
 =====================
 <------------------->
+{{EXIT_MCEDIT}}
 
 mcedit /etc/openssh/sshd_config
 Port {{SSH_PORT_M1}}
 MaxAuthTries 2
 AllowUsers sshuser
 Banner /etc/openssh/banner
+{{EXIT_MCEDIT}}
 
 systemctl restart sshd 
 ```
