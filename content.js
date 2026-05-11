@@ -82,7 +82,44 @@ function flashElementText(el) {
     }, 300);
 }
 
-// === УЛУЧШЕННАЯ ПЕЧАТЬ ОДНОГО СИМВОЛА (Поддержка Escape и Ctrl) ===
+// === КАРТА ФИЗИЧЕСКИХ КЛАВИШ ДЛЯ СПЕЦСИМВОЛОВ ===
+const charMap = {
+    '<': { code: 'Comma', shiftKey: true, keyCode: 188 },
+    '>': { code: 'Period', shiftKey: true, keyCode: 190 },
+    '|': { code: 'Backslash', shiftKey: true, keyCode: 220 },
+    '\\': { code: 'Backslash', shiftKey: false, keyCode: 220 },
+    '/': { code: 'Slash', shiftKey: false, keyCode: 191 },
+    '?': { code: 'Slash', shiftKey: true, keyCode: 191 },
+    '-': { code: 'Minus', shiftKey: false, keyCode: 189 },
+    '_': { code: 'Minus', shiftKey: true, keyCode: 189 },
+    '=': { code: 'Equal', shiftKey: false, keyCode: 187 },
+    '+': { code: 'Equal', shiftKey: true, keyCode: 187 },
+    '[': { code: 'BracketLeft', shiftKey: false, keyCode: 219 },
+    '{': { code: 'BracketLeft', shiftKey: true, keyCode: 219 },
+    ']': { code: 'BracketRight', shiftKey: false, keyCode: 221 },
+    '}': { code: 'BracketRight', shiftKey: true, keyCode: 221 },
+    ';': { code: 'Semicolon', shiftKey: false, keyCode: 186 },
+    ':': { code: 'Semicolon', shiftKey: true, keyCode: 186 },
+    "'": { code: 'Quote', shiftKey: false, keyCode: 222 },
+    '"': { code: 'Quote', shiftKey: true, keyCode: 222 },
+    ',': { code: 'Comma', shiftKey: false, keyCode: 188 },
+    '.': { code: 'Period', shiftKey: false, keyCode: 190 },
+    '`': { code: 'Backquote', shiftKey: false, keyCode: 192 },
+    '~': { code: 'Backquote', shiftKey: true, keyCode: 192 },
+    '!': { code: 'Digit1', shiftKey: true, keyCode: 49 },
+    '@': { code: 'Digit2', shiftKey: true, keyCode: 50 },
+    '#': { code: 'Digit3', shiftKey: true, keyCode: 51 },
+    '$': { code: 'Digit4', shiftKey: true, keyCode: 52 },
+    '%': { code: 'Digit5', shiftKey: true, keyCode: 53 },
+    '^': { code: 'Digit6', shiftKey: true, keyCode: 54 },
+    '&': { code: 'Digit7', shiftKey: true, keyCode: 55 },
+    '*': { code: 'Digit8', shiftKey: true, keyCode: 56 },
+    '(': { code: 'Digit9', shiftKey: true, keyCode: 57 },
+    ')': { code: 'Digit0', shiftKey: true, keyCode: 48 },
+    ' ': { code: 'Space', shiftKey: false, keyCode: 32 }
+};
+
+// === ПЕЧАТЬ ОДНОГО СИМВОЛА (Усиленная для спецсимволов) ===
 function typeSingleCharacter(char, isCtrl = false) {
     let target = document.activeElement;
     
@@ -102,15 +139,33 @@ function typeSingleCharacter(char, isCtrl = false) {
     const isCanvas = target.tagName === 'CANVAS';
 
     let key = char;
-    let code = 'Key' + char.toUpperCase();
+    let code = 'Unidentified';
     let keyCode = char.charCodeAt(0);
+    let shiftKey = false;
 
-    if (char === '\n') { key = 'Enter'; code = 'Enter'; keyCode = 13; }
-    else if (char === 'Escape') { key = 'Escape'; code = 'Escape'; keyCode = 27; }
+    // Определяем правильные скан-коды клавиш (для noVNC)
+    if (char === '\n') { 
+        key = 'Enter'; code = 'Enter'; keyCode = 13; 
+    } else if (char === 'Escape') { 
+        key = 'Escape'; code = 'Escape'; keyCode = 27; 
+    } else if (/[a-zA-Z]/.test(char)) {
+        code = 'Key' + char.toUpperCase();
+        shiftKey = char === char.toUpperCase();
+        keyCode = char.toUpperCase().charCodeAt(0);
+    } else if (/[0-9]/.test(char)) {
+        code = 'Digit' + char;
+        keyCode = char.charCodeAt(0);
+    } else if (charMap[char]) {
+        code = charMap[char].code;
+        shiftKey = charMap[char].shiftKey;
+        keyCode = charMap[char].keyCode;
+    }
 
-    if (isCtrl) keyCode = char.toUpperCase().charCodeAt(0);
+    if (isCtrl) {
+        keyCode = char.toUpperCase().charCodeAt(0);
+    }
 
-    const opts = { key, code, keyCode, which: keyCode, bubbles: true, cancelable: true, composed: true, ctrlKey: isCtrl };
+    const opts = { key, code, keyCode, which: keyCode, bubbles: true, cancelable: true, composed: true, ctrlKey: isCtrl, shiftKey };
 
     target.dispatchEvent(new KeyboardEvent('keydown', opts));
     target.dispatchEvent(new KeyboardEvent('keypress', opts));
@@ -368,33 +423,27 @@ async function injectModules() {
 
         // 1. ЛОГИКА РЕЖИМА ХАКЕРА (Строгая изоляция)
         if (hackermanMode) {
-            // Только ESC может выключить режим
             if (event.code === 'Escape') {
                 hackermanMode = false;
-                flashStealthBorder('#c0392b'); // Красный (Пауза/Выход)
+                flashStealthBorder('#c0392b'); 
                 return;
             }
 
-            // Игнорируем служебные клавиши, чтобы они не тратили символы
             if (['AltLeft', 'AltRight', 'ControlLeft', 'ControlRight', 'ShiftLeft', 'ShiftRight', 'MetaLeft', 'MetaRight', 'CapsLock', 'Tab'].includes(event.code)) {
                 return;
             }
 
-            // Блокируем ВСЕ остальные нажатия (включая Alt+6, системные шорткаты и тд)
             event.preventDefault();
             event.stopImmediatePropagation();
 
-            // Глотаем нажатия с модификаторами без расхода скрипта
             if (event.altKey || event.ctrlKey || event.metaKey) return;
-
-            // Если висит блокировка (установка пакетов или макрос)
             if (typeLock) return;
 
             if (hackermanIndex < hackermanText.length) {
-                // === ПРОВЕРКА НА МАКРОСЫ ВЫХОДА ===
+                // ПРОВЕРКА НА МАКРОСЫ ВЫХОДА
                 const remainingText = hackermanText.substring(hackermanIndex);
                 let foundMacro = null;
-                let macroSequence = []; // Очередь нажатий для макроса
+                let macroSequence = []; 
 
                 if (remainingText.startsWith('{{EXIT_MCEDIT}}')) {
                     foundMacro = '{{EXIT_MCEDIT}}';
@@ -407,10 +456,9 @@ async function injectModules() {
                     macroSequence = ['Escape', ':', 'w', 'q', '\n'];
                 }
 
-                // ВЫПОЛНЕНИЕ МАКРОСА
                 if (foundMacro) {
                     hackermanIndex += foundMacro.length;
-                    typeLock = true; // Блокируем пользователя, пока макрос не выполнится
+                    typeLock = true; 
                     
                     (async () => {
                         for (const mk of macroSequence) {
@@ -419,33 +467,31 @@ async function injectModules() {
                             } else {
                                 typeSingleCharacter(mk, false);
                             }
-                            await new Promise(r => setTimeout(r, 400)); // Задержка между действиями в редакторе
+                            await new Promise(r => setTimeout(r, 400)); 
                         }
                         typeLock = false;
                         
                         if (hackermanIndex >= hackermanText.length) {
                             hackermanMode = false;
-                            flashStealthBorder('#27ae60'); // Зеленый
+                            flashStealthBorder('#27ae60'); 
                         }
                     })();
                     return; 
                 }
 
-                // === ОБЫЧНАЯ ПЕЧАТЬ СИМВОЛА ===
                 const char = hackermanText[hackermanIndex];
                 
-                // УМНЫЕ ТАЙМИНГИ
                 if (char === '\n') {
                     const textBefore = hackermanText.substring(0, hackermanIndex);
                     const currentLine = textBefore.split('\n').pop().trim();
                     let delay = 100; 
                     
                     if (currentLine.match(/^(mcedit|nano|vi|vim)/)) {
-                        delay = 1500; // Ждем 1.5 сек открытия редактора
+                        delay = 1500; 
                     } else if (currentLine.match(/(?:^|\s)(apt|apt-get|epm|dnf|yum)\s/i)) {
-                        delay = 5000; // Ждем 5 сек скачивания пакетов
+                        delay = 5000; 
                     } else if (currentLine.match(/^(systemctl|docker|sleep|tar|curl|wget)/)) {
-                        delay = 2000; // Ждем 2 сек
+                        delay = 2000; 
                     }
 
                     if (delay > 100) {
@@ -459,13 +505,13 @@ async function injectModules() {
                 
                 if (hackermanIndex >= hackermanText.length) {
                     hackermanMode = false;
-                    flashStealthBorder('#27ae60'); // Зеленый (Код закончился)
+                    flashStealthBorder('#27ae60'); 
                 }
             }
             return;
         }
 
-        // 2. СТАНДАРТНЫЕ ГОРЯЧИЕ КЛАВИШИ (Работают ТОЛЬКО если HackermanMode = false)
+        // 2. СТАНДАРТНЫЕ ГОРЯЧИЕ КЛАВИШИ 
         if (event.altKey && event.code === 'Digit1') { 
             event.preventDefault(); activeModule = 1; saveGlobalState();
             flashStealthBorder('#bdc3c7'); 
@@ -520,15 +566,14 @@ async function injectModules() {
 
                 if (!hackermanMode) {
                     hackermanMode = true;
-                    // Если скопировали новый код или дошли до конца - начинаем с нуля
                     if (hackermanText !== newText || hackermanIndex >= hackermanText.length) {
                         hackermanText = newText;
                         hackermanIndex = 0;
                     }
-                    flashStealthBorder('#9b59b6'); // Фиолетовый (Можно печатать)
+                    flashStealthBorder('#9b59b6'); 
                 }
             } else {
-                flashStealthBorder('#c0392b'); // Красный (Ошибка - пустой буфер)
+                flashStealthBorder('#c0392b'); 
             }
         }
 

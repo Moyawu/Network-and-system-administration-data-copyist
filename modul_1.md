@@ -5,7 +5,7 @@ hostnamectl hostname ISP
 bash
 
 apt-get update
-apt-get install mcedit
+apt-get install mc
 
 mkdir -p /etc/net/ifaces/ens{19,20}/
 echo 'TYPE=eth' | tee /etc/net/ifaces/ens{19,20}/options
