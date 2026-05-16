@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ALT Linux Sysadmin DE Modules",
-  "version": "1.11",
-  "description": "Stealth DE Tool (Cross-Domain Sync & KVM Typer)",
+  "version": "2.0",
+  "description": "Stealth DE Tool (release)",
   "permissions": ["storage", "clipboardRead"],
   "content_scripts": [
     {
