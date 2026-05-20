@@ -2,6 +2,15 @@ const abortController = new AbortController();
 const { signal } = abortController;
 
 async function injectModules() {
+    // Автоопределение VM из параметров прямой ссылки Proxmox
+    const urlParams = new URLSearchParams(window.location.search);
+    const vmName = urlParams.get('vmname');
+    if (vmName) {
+        console.log(`[Stealth] Обнаружена прямая консоль для ВМ: ${vmName}`);
+        if (!window.DeState) window.DeState = {};
+        window.DeState.currentVmFromUrl = vmName.toUpperCase();
+    }
+
     window.DeState.rawTemplates.mod1 = await (await fetch(chrome.runtime.getURL('modul_1.md'))).text();
     window.DeState.rawTemplates.mod2 = await (await fetch(chrome.runtime.getURL('modul_2.md'))).text();
     window.DeParser.updateParsedData();
@@ -9,15 +18,35 @@ async function injectModules() {
     const contentContainer = document.getElementById('mw-content-text');
     if (contentContainer) {
         const style = document.createElement('style');
-        style.textContent = `.de-stealth-module { display: none; margin-top: 15px; font-size: 13px; } .de-stealth-module.active { display: block; } .stealth-table { width: 100%; border-collapse: collapse; margin-bottom: 0.8em; font-size: 13px; } .stealth-table td { padding: 0.3em 0.6em; border-bottom: 1px solid #eee; } .stealth-input { width: 100%; border: none; outline: none; background: transparent; font-family: monospace; } pre { cursor: pointer; background: #f8f9fa; border: 1px solid #eaecf0; padding: 0.8em; border-radius: 2px; } h1,h2,h3 { cursor: pointer; user-select: none; }`;
+        style.textContent = `
+            .de-stealth-module { display: none; margin-top: 15px; font-size: 13px; } 
+            .de-stealth-module.active { display: block; } 
+            .stealth-table { width: 100%; border-collapse: collapse; margin-bottom: 0.8em; font-size: 13px; } 
+            .stealth-table td { padding: 0.3em 0.6em; border-bottom: 1px solid #eee; } 
+            .stealth-table td.stealth-input { width: 100%; border: none; outline: none; background: transparent; font-family: monospace; } 
+            pre { cursor: pointer; background: #f8f9fa; border: 1px solid #eaecf0; padding: 0.8em; border-radius: 2px; } 
+            h1, h2, h3 { cursor: pointer; user-select: none; }
+            .device-wrap { margin-bottom: 15px; }
+            .device-wrap h2 { transition: all 0.3s ease; padding: 4px 8px; border-radius: 4px; display: inline-block; }
+            
+            .device-wrap h2.active-device { background-color: #ff6b81; color: white; box-shadow: 0 2px 4px rgba(255, 107, 129, 0.3); }
+            .stage-wrap { opacity: 0.4; transition: all 0.2s; padding-left: 10px; border-left: 3px solid transparent; }
+            .stage-wrap.active-stage { opacity: 1; border-left: 3px solid #ff6b81; background: rgba(255, 107, 129, 0.05); }
+        `;
         document.head.appendChild(style);
         contentContainer.insertAdjacentHTML('beforeend', `<div class="de-modules-container"><div id="wrapper-app-1" class="de-stealth-module"><div id="config-app-1"></div><div id="content-app-1"></div></div><div id="wrapper-app-2" class="de-stealth-module"><div id="config-app-2"></div><div id="content-app-2"></div></div></div>`);
         window.DeUI.renderUpdates();
     }
 
-    // Универсальный делегированный клик с Умным Поиском (Smart Fetch)
     document.addEventListener('click', (e) => {
         const text = e.target.innerText || e.target.textContent; 
+        
+        setTimeout(() => {
+            if (window.DeUI && window.DeUI.updateStageHighlight) {
+                window.DeUI.updateStageHighlight();
+            }
+        }, 150);
+
         if (!text || text.trim().length > 80) return; 
         
         const targetDevice = window.DeState.devices.find(d => {
@@ -29,45 +58,35 @@ async function injectModules() {
         
         if (targetDevice && (e.target.tagName.match(/^H[1-4]$/) || e.target.closest('.xterm-helper-textarea') == null)) {
             
-            let foundMod = window.DeState.activeModule;
-            let foundPhase = window.DeState.activePhase;
-            let finalCode = null;
+            let activeMod = Number(window.DeState.activeModule) || 1;
+            let activeStage = Number(window.DeState.activeStage) || 1; 
+            const phases = window.DeState.parsedPhases[`mod${activeMod}`];
             
-            // Ищем код в текущих модулях/фазах, если нет - проверяем другие
-            const phases = [window.DeState.activePhase, (window.DeState.activePhase === 1 ? 2 : 1)];
-            const mods = [window.DeState.activeModule, (window.DeState.activeModule === 1 ? 2 : 1)];
-            
-            for(let m of mods) {
-                for(let p of phases) {
-                    const mk = `mod${m}`;
-                    const pk = `p${p}`;
-                    if (window.DeState.parsedPhases[mk][pk][targetDevice]) {
-                        finalCode = window.DeState.parsedPhases[mk][pk][targetDevice];
-                        foundMod = m;
-                        foundPhase = p;
-                        break;
-                    }
+            if (!phases) return;
+
+            let code = (phases[activeStage]) ? phases[activeStage][targetDevice] : null;
+
+            if (!code && window.getSelection().toString().length === 0) {
+                let availableStages = Object.keys(phases).map(Number).sort((a,b)=>a-b);
+                let nextStage = availableStages.find(s => s > activeStage && phases[s] && phases[s][targetDevice]);
+                if (!nextStage) {
+                    nextStage = availableStages.find(s => phases[s] && phases[s][targetDevice]); 
                 }
-                if (finalCode) break;
+                
+                if (nextStage) {
+                    activeStage = nextStage;
+                    code = phases[activeStage][targetDevice];
+                }
             }
 
-            // Если код найден и пользователь не выделял текст мышкой
-            if (finalCode && window.getSelection().toString().length === 0) { 
-                
-                // Авто-переключение модуля в UI, если код был в другом модуле
-                if (foundMod !== window.DeState.activeModule) {
-                    window.DeState.activeModule = foundMod;
-                    const w1 = document.getElementById('wrapper-app-1'), w2 = document.getElementById('wrapper-app-2');
-                    if (foundMod === 1) { w1?.classList.add('active'); w2?.classList.remove('active'); window.DeUI.flashStealthBorder('#bdc3c7'); }
-                    else { w2?.classList.add('active'); w1?.classList.remove('active'); window.DeUI.flashStealthBorder('#7f8c8d'); }
-                }
-                // Авто-переключение фазы
-                if (foundPhase !== window.DeState.activePhase) {
-                    window.DeState.activePhase = foundPhase;
-                    window.DeUI.flashStealthBorder('#ffffff');
+            if (code && window.getSelection().toString().length === 0) { 
+                if (activeStage !== Number(window.DeState.activeStage)) {
+                    window.DeState.activeStage = activeStage;
+                    window.DeState.saveGlobalState();
+                    window.DeUI.updateStageHighlight();
                 }
                 
-                window.DeState.ghostBuffer = finalCode; 
+                window.DeState.ghostBuffer = code; 
                 window.DeState.saveGlobalState(); 
                 window.DeUI.flashElementText(e.target); 
             }
@@ -77,7 +96,6 @@ async function injectModules() {
     window.addEventListener('keydown', async (event) => {
         if (!event.isTrusted) return; 
 
-        // 1. НАИВЫСШИЙ ПРИОРИТЕТ: Системные Хоткеи
         if (event.altKey && event.code.match(/^Digit[1-7]$/)) {
             event.preventDefault(); 
             event.stopImmediatePropagation();
@@ -89,11 +107,13 @@ async function injectModules() {
                 window.DeState.activeModule = 1; window.DeState.saveGlobalState(); window.DeUI.flashStealthBorder('#bdc3c7'); 
                 const w1 = document.getElementById('wrapper-app-1'), w2 = document.getElementById('wrapper-app-2'); 
                 if (w1) { w1.classList.add('active'); w2?.classList.remove('active'); } 
+                window.DeUI.updateStageHighlight(); 
             }
             else if (event.code === 'Digit2') { 
                 window.DeState.activeModule = 2; window.DeState.saveGlobalState(); window.DeUI.flashStealthBorder('#7f8c8d'); 
                 const w1 = document.getElementById('wrapper-app-1'), w2 = document.getElementById('wrapper-app-2'); 
                 if (w2) { w2.classList.add('active'); w1?.classList.remove('active'); } 
+                window.DeUI.updateStageHighlight(); 
             }
             else if (event.code === 'Digit3') { 
                 try {
@@ -122,9 +142,20 @@ async function injectModules() {
                 }
             }
             else if (event.code === 'Digit7') {
-                window.DeState.activePhase = (window.DeState.activePhase === 1) ? 2 : 1;
-                window.DeState.saveGlobalState();
-                window.DeUI.flashStealthBorder('#ffffff'); 
+                const phases = window.DeState.parsedPhases[`mod${window.DeState.activeModule}`];
+                if (phases) {
+                    const availableStages = Object.keys(phases).map(Number).sort((a,b)=>a-b);
+                    if (availableStages.length > 0) {
+                        let currentIdx = availableStages.indexOf(Number(window.DeState.activeStage));
+                        let nextIdx = currentIdx + 1;
+                        if (nextIdx >= availableStages.length) nextIdx = 0; 
+                        
+                        window.DeState.activeStage = availableStages[nextIdx];
+                        window.DeState.saveGlobalState();
+                        window.DeUI.updateStageHighlight();
+                        window.DeUI.flashStealthBorder('#ffffff'); 
+                    }
+                }
             }
             return; 
         }
@@ -133,13 +164,9 @@ async function injectModules() {
             event.preventDefault(); window.DeUI.panicHide(); return; 
         }
 
-        // 2. Логика Hackerman Mode
         if (window.DeState.hackermanMode) {
             if (event.code === 'Escape') { 
-                window.DeState.hackermanMode = false; 
-                window.DeState.typeLock = false; 
-                window.DeUI.flashStealthBorder('#c0392b'); 
-                return; 
+                window.DeState.hackermanMode = false; window.DeState.typeLock = false; window.DeUI.flashStealthBorder('#c0392b'); return; 
             }
             if (['AltLeft', 'AltRight', 'ControlLeft', 'ControlRight', 'ShiftLeft', 'ShiftRight', 'MetaLeft', 'MetaRight', 'CapsLock', 'Tab'].includes(event.code)) return;
             
@@ -150,26 +177,46 @@ async function injectModules() {
                 const remaining = window.DeState.hackermanText.substring(window.DeState.hackermanIndex);
                 let foundMacro = null, macroSequence = [];
                 
+                // Комплексные макросы программ
                 if (remaining.startsWith('{{EXIT_MCEDIT}}')) { foundMacro = '{{EXIT_MCEDIT}}'; macroSequence = ['Escape', '2', '\n', 'Escape', '0']; }
                 else if (remaining.startsWith('{{EXIT_NANO}}')) { foundMacro = '{{EXIT_NANO}}'; macroSequence = ['Ctrl+O', '\n', 'Ctrl+X']; }
                 else if (remaining.startsWith('{{EXIT_VIM}}')) { foundMacro = '{{EXIT_VIM}}'; macroSequence = ['Escape', ':', 'w', 'q', '\n']; }
                 else if (remaining.startsWith('{{MC_DEL_LINE}}')) { foundMacro = '{{MC_DEL_LINE}}'; macroSequence = ['Ctrl+Y']; }
                 else if (remaining.startsWith('{{NANO_DEL_LINE}}')) { foundMacro = '{{NANO_DEL_LINE}}'; macroSequence = ['Ctrl+K']; }
-                else if (remaining.startsWith('{{DOWN}}')) { foundMacro = '{{DOWN}}'; macroSequence = ['ArrowDown']; }
-                else if (remaining.startsWith('{{TAB}}')) { foundMacro = '{{TAB}}'; macroSequence = ['Tab']; }
+
+                // Атомарные инструменты редактирования и навигации
+                else if (remaining.startsWith('{{LEFT}}')) { foundMacro = '{{LEFT}}'; macroSequence = ['ArrowLeft']; }
+		else if (remaining.startsWith('{{RIGHT}}')) { foundMacro = '{{RIGHT}}'; macroSequence = ['ArrowRight']; }
+		else if (remaining.startsWith('{{UP}}')) { foundMacro = '{{UP}}'; macroSequence = ['ArrowUp']; }
+		else if (remaining.startsWith('{{DOWN}}')) { foundMacro = '{{DOWN}}'; macroSequence = ['ArrowDown']; }
+                else if (remaining.startsWith('{{HOME}}')) { foundMacro = '{{HOME}}'; macroSequence = ['HOME']; }
+                else if (remaining.startsWith('{{END}}')) { foundMacro = '{{END}}'; macroSequence = ['END']; }
+                else if (remaining.startsWith('{{PGUP}}')) { foundMacro = '{{PGUP}}'; macroSequence = ['PGUP']; }
+                else if (remaining.startsWith('{{PGDN}}')) { foundMacro = '{{PGDN}}'; macroSequence = ['PGDN']; }
+                else if (remaining.startsWith('{{TAB}}')) { foundMacro = '{{TAB}}'; macroSequence = ['TAB']; }
+                else if (remaining.startsWith('{{BACKSPACE}}')) { foundMacro = '{{BACKSPACE}}'; macroSequence = ['BACKSPACE']; }
+                else if (remaining.startsWith('{{DEL}}')) { foundMacro = '{{DEL}}'; macroSequence = ['DEL']; }
+                else if (remaining.startsWith('{{DEL_LEFT}}')) { foundMacro = '{{DEL_LEFT}}'; macroSequence = ['DEL_LEFT']; }
+                else if (remaining.startsWith('{{DEL_RIGHT}}')) { foundMacro = '{{DEL_RIGHT}}'; macroSequence = ['DEL_RIGHT']; }
+
+                // Динамический перехват любых кастомных макросов вида {{ЛЮБОЙ_ТЕКСТ}}
+                if (!foundMacro) {
+                    const genericMatch = remaining.match(/^\{\{([^}]+)\}\}/);
+                    if (genericMatch) {
+                        foundMacro = genericMatch[0];
+                        macroSequence = [genericMatch[1]];
+                    }
+                }
 
                 if (foundMacro) {
                     window.DeState.hackermanIndex += foundMacro.length; 
                     window.DeState.typeLock = true;
                     (async () => {
                         for (const mk of macroSequence) {
-                            let isCtrl = mk.startsWith('Ctrl+');
-                            let isAlt = mk.startsWith('Alt+');
+                            let isCtrl = mk.startsWith('Ctrl+'); let isAlt = mk.startsWith('Alt+');
                             let charToType = mk.replace('Ctrl+', '').replace('Alt+', '');
-                            
                             if (isCtrl) charToType = charToType.toLowerCase();
                             window.DeKeyboard.typeSingleCharacter(charToType, isCtrl, isAlt);
-                            
                             await new Promise(r => setTimeout(r, 400));
                         }
                         window.DeState.typeLock = false; 
@@ -187,10 +234,7 @@ async function injectModules() {
                     if (currentLine.match(/^(mcedit|nano|vi|vim)/)) delay = 1500;
                     else if (currentLine.match(/(?:^|\s)(apt|apt-get|epm|dnf|yum)\s/i)) delay = 5000;
                     else if (currentLine.match(/^(systemctl|docker|sleep|tar|curl|wget)/)) delay = 2000;
-                    if (delay > 100) { 
-                        window.DeState.typeLock = true; 
-                        setTimeout(() => { window.DeState.typeLock = false; }, delay); 
-                    }
+                    if (delay > 100) { window.DeState.typeLock = true; setTimeout(() => { window.DeState.typeLock = false; }, delay); }
                 }
                 
                 window.DeKeyboard.typeSingleCharacter(char); 
@@ -208,12 +252,12 @@ async function injectModules() {
     document.addEventListener('visibilitychange', () => { if (document.hidden) window.DeUI.panicHide(); }, { signal });
 }
 
-chrome.storage.local.get(['netConfig', 'ghostBuffer', 'activeModule', 'activePhase'], (res) => {
+chrome.storage.local.get(['netConfig', 'ghostBuffer', 'activeModule', 'activeStage'], (res) => {
     window.DeState.init(() => window.DeUI.renderUpdates());
     if (res.netConfig) window.DeState.netConfig = res.netConfig;
     if (res.ghostBuffer) window.DeState.ghostBuffer = res.ghostBuffer;
-    if (res.activeModule) window.DeState.activeModule = res.activeModule;
-    if (res.activePhase) window.DeState.activePhase = res.activePhase;
+    if (res.activeModule) window.DeState.activeModule = Number(res.activeModule) || 1;
+    if (res.activeStage) window.DeState.activeStage = Number(res.activeStage) || 1; 
     
     injectModules();
 });

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ALT Linux Sysadmin DE Modules",
-  "version": "2.0",
-  "description": "Stealth DE Tool (release)",
+  "version": "2.1",
+  "description": "Stealth DE Tool",
   "permissions": ["storage", "clipboardRead"],
   "content_scripts": [
     {

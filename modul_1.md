@@ -1,426 +1,369 @@
 ## ISP
-
+# 1. Base
 ```bash
-hostnamectl hostname ISP
-bash
-
-apt-get update
-apt-get install mc
-
-mkdir -p /etc/net/ifaces/ens{19,20}/
-echo 'TYPE=eth' | tee /etc/net/ifaces/ens{19,20}/options
-echo '{{ISP_IP_1}}/28' > /etc/net/ifaces/ens19/ipv4address
-echo '{{ISP_IP_2}}/28' > /etc/net/ifaces/ens20/ipv4address
+hostnamectl hostname ISP; exec bash
+sed -i "s/HOSTNAME=localhost/HOSTNAME=ISP/g" /etc/sysconfig/network
+apt-get update && apt-get install mc iptables -y
+mkdir -p /etc/net/ifaces/enp7s{2,3}/
+echo 'TYPE=eth' | tee /etc/net/ifaces/enp7s{2,3}/options
+echo "BOOTPROTO=static" >> /etc/net/ifaces/enp7s2/options
+echo "BOOTPROTO=static" >> /etc/net/ifaces/enp7s3/options
+echo '{{ISP_IP_1}}/{{M_EXT}}' > /etc/net/ifaces/enp7s2/ipv4address
+echo '{{ISP_IP_2}}/{{M_EXT}}' > /etc/net/ifaces/enp7s3/ipv4address
+sed -i 's/net.ipv4.ip_forward = 0/net.ipv4.ip_forward = 1/' /etc/net/sysctl.conf
 systemctl restart network
-
-mcedit /etc/net/ifaces/ens19/ipv4address
-{{ISP_IP_1}}/28
-{{EXIT_MCEDIT}}
-
-mcedit /etc/net/ifaces/ens20/ipv4address
-{{ISP_IP_2}}/28
-{{EXIT_MCEDIT}}
-
-systemctl restart network
-
-mcedit /etc/net/sysctl.conf
-net.ipv4.ip_forward=1
-{{EXIT_MCEDIT}}
-
-apt-get install nftables
-
-mcedit /etc/nftables/nftables.nft
-table ip nat {
- chain postrouting {
- type nat hook postrouting priority srcnat;
- oifname "ens18" masquerade
-}
-}
-{{EXIT_MCEDIT}}
-
-systemctl enable --now nftables
+iptables -t nat -F
+iptables -t nat -A POSTROUTING -o enp7s1 -j MASQUERADE
+iptables-save >> /etc/sysconfig/iptables
+systemctl enable --now iptables
 ```
 
 ## HQ-RTR
 
+# 1. Base
+
 ```bash
-hostnamectl hostname HQ-RTR.{{DOMAIN}}
+hostnamectl hostname HQ-RTR.{{DOMAIN}}; exec bash
+sed -i "s/HOSTNAME=localhost/HOSTNAME=hq-rtr.{{DOMAIN}}/g" /etc/sysconfig/network
+mkdir -p /etc/net/ifaces/{enp7s2,enp7s2.{{VLAN_1}},enp7s2.{{VLAN_2}},enp7s2.{{VLAN_3}}}
+echo "{{HQ_RTR_EXT}}/{{M_EXT}}" > /etc/net/ifaces/enp7s1/ipv4address
+echo "TYPE=eth" | tee /etc/net/ifaces/enp7s{1,2}/options
+echo "default via {{ISP_IP_1}}" > /etc/net/ifaces/enp7s1/ipv4route
+echo "nameserver 8.8.8.8" > /etc/net/ifaces/enp7s1/resolv.conf
+echo -e "TYPE=vlan\nHOST=enp7s2\nVID={{VLAN_1}}" > /etc/net/ifaces/enp7s2.{{VLAN_1}}/options
+echo -e "TYPE=vlan\nHOST=enp7s2\nVID={{VLAN_2}}" > /etc/net/ifaces/enp7s2.{{VLAN_2}}/options
+echo -e "TYPE=vlan\nHOST=enp7s2\nVID={{VLAN_3}}" > /etc/net/ifaces/enp7s2.{{VLAN_3}}/options
+echo "{{HQ_RTR_V100}}/{{M_VLAN1}}" > /etc/net/ifaces/enp7s2.{{VLAN_1}}/ipv4address
+echo "{{HQ_RTR_V200}}/{{M_VLAN2}}" > /etc/net/ifaces/enp7s2.{{VLAN_2}}/ipv4address
+echo "{{HQ_RTR_V999}}/{{M_VLAN3}}" > /etc/net/ifaces/enp7s2.{{VLAN_3}}/ipv4address
+sed -i 's/net.ipv4.ip_forward = 0/net.ipv4.ip_forward = 1/' /etc/net/sysctl.conf
+systemctl restart network
+apt-get update && apt-get install sudo tzdata frr dnsmasq iptables -y
+iptables -t nat -F
+iptables -t nat -A POSTROUTING -o enp7s1 -j MASQUERADE
+iptables-save >> /etc/sysconfig/iptables
+systemctl enable --now iptables
+```
 
-apt-get update
-apt-get install sudo tzdata frr dnsmasq nftables -y
+# 3. Users
 
-mkdir -p /etc/net/ifaces/{ens19,vlan{100,200,999},gre1} 
+```bash
+useradd -m -G wheel {{RTR_USER}}
+echo "{{RTR_USER}}:{{PASS_MAIN}}" | chpasswd
+echo "{{RTR_USER}} ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/{{RTR_USER}}
 
-echo 'TYPE=eth' | tee /etc/net/ifaces/ens{18,19}/options
-echo '{{HQ_RTR_EXT}}/28' > /etc/net/ifaces/ens18/ipv4address
-\echo 'TYPE=eth' | tee /etc/net/ifaces/ens18/options
-\echo 'TYPE=eth' | tee /etc/net/ifaces/ens19/options
+```
 
-echo 'default via {{ISP_IP_1}}' > /etc/net/ifaces/ens18/ipv4route
-echo 'nameserver 8.8.8.8' > /etc/net/ifaces/ens18/resolv.conf
+# 6. Tunnel
 
-echo -e 'TYPE=vlan\nHOST=ens19\nVID=100' > /etc/net/ifaces/vlan100/options
-echo -e 'TYPE=vlan\nHOST=ens19\nVID=200' > /etc/net/ifaces/vlan200/options
-echo -e 'TYPE=vlan\nHOST=ens19\nVID=999' > /etc/net/ifaces/vlan999/options
-
-mcedit /etc/net/ifaces/gre1/options
+```bash
+mkdir -p /etc/net/ifaces/gre1
+cat <<EOF > /etc/net/ifaces/gre1/options
 TYPE=iptun
 TUNTYPE=gre
 TUNLOCAL={{HQ_RTR_EXT}}
 TUNREMOTE={{BR_RTR_EXT}}
 TUNTTL=64
 TUNOPTIONS='ttl 64'
-{{EXIT_MCEDIT}}
-
-echo '{{HQ_RTR_V100}}/26' > /etc/net/ifaces/vlan100/ipv4address
-echo '{{HQ_RTR_V200}}/28' > /etc/net/ifaces/vlan200/ipv4address
-echo '{{HQ_RTR_V999}}/29' > /etc/net/ifaces/vlan999/ipv4address
-echo "{{TUNNEL_HQ}}/30" > /etc/net/ifaces/gre1/ipv4address
-
-mcedit /etc/net/sysctl.conf
-net.ipv4.ip_forward=1
-{{EXIT_MCEDIT}}
-
+HOST=enp7s1
+EOF
+echo "{{TUNNEL_HQ}}/{{M_TUN}}" > /etc/net/ifaces/gre1/ipv4address
 systemctl restart network
+```
 
-timedatectl set-timezone Europe/Moscow
+# 7. Routing
 
-useradd net_admin
-passwd net_admin 
-{{PASS_MAIN}}
-usermod -aG wheel net_admin
-
-mcedit /etc/sudoers.d/net_admin
-WHEEL_USERS ALL=(ALL:ALL) NOPASSWD: ALL
-{{EXIT_MCEDIT}}
-
-sudo mcedit /etc/frr/frr.conf
-interface gre1
- ip ospf area 0
- ip ospf authentification
- ip ospf authentification-key {{PASS_MAIN}}
- no ip ospf passive
-exit
- interface vlan100
- ip ospf area 0
-exit
- interface vlan200
- ip ospf area 0
-exit
- interface vlan999
- ip ospf area 0
-exit
+```bash
+sed -i "s/ospfd=no/ospfd=yes/g" /etc/frr/daemons
+systemctl enable --now frr.service
+vtysh
+configure terminal
 router ospf
- passive-interface default
+passive-interface default
+network {{NET_TUN}}/{{M_TUN}} area 0
+network {{NET_VLAN1}}/{{M_VLAN1}} area 0
+network {{NET_VLAN2}}/{{M_VLAN2}} area 0
+network {{NET_VLAN3}}/{{M_VLAN3}} area 0
 exit
-{{EXIT_MCEDIT}}
+interface gre1
+no ip ospf passive
+ip ospf authentication message-digest
+ip ospf message-digest-key 1 md5 {{PASS_MAIN}}
+end
+wr mem
+exit
 
-systemctl enable frr.service
+```
 
-mcedit /etc/frr/daemons
-ospfd=yes
-{{EXIT_MCEDIT}}
+# 8. NAT
 
-mcedit /etc/syscofig/dnsmasq
-AUTO_LOCAL_RESOLVER=no
-{{EXIT_MCEDIT}}
+```bash
+iptables -t nat -A POSTROUTING -o enp7s1 -j MASQUERADE
+iptables-save >> /etc/sysconfig/iptables
+systemctl enable --now iptables
+```
 
-mcedit /etc/dnsmasq.conf
+# 9. DHCP
+
+```bash
+sed -i "s/AUTO_LOCAL_RESOLVER=yes/AUTO_LOCAL_RESOLVER=no/g" /etc/sysconfig/dnsmasq
+cat <<EOF > /etc/dnsmasq.conf
 port=0
-interface=vlan200
+interface=enp7s2.{{VLAN_2}}
 listen-address={{HQ_RTR_V200}}
 dhcp-authoritative
-dhcp-range=interface:vlan200,192.168.200.2,{{HQ_RTR_V200}}0,727h
+dhcp-range=interface:enp7s2.{{VLAN_2}},{{NET_VLAN2_START}},{{NET_VLAN2_END}},12h
 dhcp-option=3,{{HQ_RTR_V200}}
 dhcp-option=6,{{HQ_SRV_IP_M1}}
+dhcp-option=15,{{DOMAIN}}
 leasefile-ro
-{{EXIT_MCEDIT}}
+EOF
+systemctl enable --now dnsmasq
+```
 
-\Don't send any default route
-\dhcp-option=3
-\Set the DNS server
-\dhcp-option=6,8.8.8.8
+# 11. Timezone
 
-systemctl restart dnsmasq
+```bash
+timedatectl set-timezone Europe/Moscow
 
-mcedit /etc/nftables/nftables.nft
-table ip nat {
-  chain postrouting {
-    type nat hook postrouting priority srcnat;
-    oifname "ens18" masquerade
-  }
-}
-{{EXIT_MCEDIT}}
-
-systemctl enable --now nftables
-systemctl status frr
-systemctl status dnsmasq
 ```
 
 ## BR-RTR
 
+# 1. Base
+
 ```bash
-hostnamectl hostname BR-RTR.{{DOMAIN}}
-
-apt-get update
-apt-get install sudo tzdata frr nftables -y
-
-mkdir -p /etc/net/ifaces/{ens{18,19},gre1}
-
-ls -l /etc/net/ifaces/
-
-echo 'TYPE=eth' | tee /etc/net/ifaces/ens{18,19}/options
-echo ‘{{BR_RTR_EXT}}/28’ > /etc/net/ifaces/ens18/ipv4address
-echo ‘{{BR_RTR_INT_M1}}/28’ > /etc/net/ifaces/ens19/ipv4address
-echo ‘default via {{ISP_IP_2}}’ > /etc/net/ifaces/ens18/ipv4route
-echo ‘nameserver 8.8.8.8’ > /etc/net/ifaces/ens18/resolv.conf
-
-mcedit /etc/net/sysctl.conf
-net.ipv4.conf.ip_forward = 1
-{{EXIT_MCEDIT}}
-
+hostnamectl hostname BR-RTR.{{DOMAIN}}; exec bash
+sed -i "s/HOSTNAME=localhost/HOSTNAME=br-rtr.{{DOMAIN}}/g" /etc/sysconfig/network
+mkdir -p /etc/net/ifaces/enp7s{1,2}
+echo "TYPE=eth" | tee /etc/net/ifaces/enp7s{1,2}/options
+echo "{{BR_RTR_EXT}}/{{M_EXT}}" > /etc/net/ifaces/enp7s1/ipv4address
+echo "{{BR_RTR_INT_M1}}/{{M_BR_SRV}}" > /etc/net/ifaces/enp7s2/ipv4address
+echo "default via {{ISP_IP_2}}" > /etc/net/ifaces/enp7s1/ipv4route
+echo "nameserver 8.8.8.8" > /etc/net/ifaces/enp7s1/resolv.conf
+echo "nameserver 8.8.8.8" > /etc/resolv.conf
+sed -i 's/net.ipv4.ip_forward = 0/net.ipv4.ip_forward = 1/' /etc/net/sysctl.conf
 systemctl restart network
+apt-get update && apt-get install sudo tzdata frr iptables -y
+iptables -t nat -A POSTROUTING -o enp7s1 -j MASQUERADE
+iptables-save >> /etc/sysconfig/iptables
+systemctl enable --now iptables
+```
 
-mcedit /etc/net/ifaces/gre1/options
+# 3. Users
+
+```bash
+useradd -m -G wheel {{RTR_USER}}
+echo "{{RTR_USER}}:{{PASS_MAIN}}" | chpasswd
+echo "{{RTR_USER}} ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/{{RTR_USER}}
+
+```
+
+# 6. Tunnel
+
+```bash
+mkdir -p /etc/net/ifaces/gre1
+cat <<EOF > /etc/net/ifaces/gre1/options
 TYPE=iptun
 TUNTYPE=gre
 TUNLOCAL={{BR_RTR_EXT}}
 TUNREMOTE={{HQ_RTR_EXT}}
 TUNTTL=64
 TUNOPTIONS='ttl 64'
-{{EXIT_MCEDIT}}
+HOST=enp7s1
+EOF
+echo "{{TUNNEL_BR}}/{{M_TUN}}" > /etc/net/ifaces/gre1/ipv4address
+systemctl restart network
 
-echo "{{TUNNEL_BR}}/30" > /etc/net/ifaces/gre1/ipv4address/
+```
 
-mcedit /etc/net/ifaces/ens18/resolv.conf
+# 7. Routing
+
+```bash
+sed -i "s/ospfd=no/ospfd=yes/g" /etc/frr/daemons
+systemctl enable --now frr.service
+vtysh
+configure terminal
+router ospf
+passive-interface default
+network {{NET_TUN}}/{{M_TUN}} area 0
+network {{NET_BR_SRV}}/{{M_BR_SRV}} area 0
+exit
+interface gre1
+no ip ospf passive
+ip ospf authentication message-digest
+ip ospf message-digest-key 1 md5 {{PASS_MAIN}}
+end
+wr mem
+exit
+
+```
+
+# 11. Timezone
+
+```bash
+cat <<EOF > /etc/net/ifaces/enp7s1/resolv.conf
 search {{DOMAIN}}
 nameserver {{HQ_SRV_IP_M1}}
-{{EXIT_MCEDIT}}
-
-mcedit /etc/nftables/nftables.nft
-table ip nat {
-  chain postrouting {
-    type nat hook postrouting priority srcnat;
-    oifname "ens18" masquerade
-  }
-}
-{{EXIT_MCEDIT}}
-
-systemctl enable --now nftables
+EOF
 
 timedatectl set-timezone Europe/Moscow
-
-useradd net_admin
-passwd net_admin
-{{PASS_MAIN}}
-usermod -aG wheel net_admin
-
-mcedit /etc/sudoers.d/net_admin
-WHEEL_USERS ALL=(ALL:ALL) NOPASSWD: ALL
-{{EXIT_MCEDIT}}
-
-sudo mcedit /etc/frr/frr.conf
-interface gre1
- ip ospf area 0
- ip ospf authentification
- ip ospf authentification-key {{PASS_MAIN}}
- no ip ospf passive
-exit
-interface ens19
- ip ospf area 0
-exit
-router ospf
- passive-interface default
-exit
-{{EXIT_MCEDIT}}
-
-systemctl enable frr.service
-
-mcedit /etc/frr/daemons
-ospfd=yes
 ```
 
 ## HQ-SRV
 
+# 1. Base
+
 ```bash
-
-hostnamectl hostname HQ-SRV.{{DOMAIN}}
-
-bash
-
-timedatactl set-timezone Europe/Moskow
-
-mcedit /etc/net/ifaces/ens18/options
-TYPE=eth
-{{EXIT_MCEDIT}}
-
-mcedit /etc/net/ifaces/ens18/ipv4address
-{{HQ_SRV_IP_M1}}/27
-{{EXIT_MCEDIT}}
-
-mcedit /etc/net/ifaces/ens18/ipv4router
-default via {{HQ_RTR_V100}}
-{{EXIT_MCEDIT}}
-
-mcedit /etc/net/ifaces/ens18/resolve.conf
+hostnamectl hostname HQ-SRV.{{DOMAIN}}; exec bash
+sed -i "s/HOSTNAME=localhost/HOSTNAME=hq-srv.{{DOMAIN}}/g" /etc/sysconfig/network
+mkdir -p /etc/net/ifaces/{enp7s1,enp7s1.{{VLAN_1}}}
+echo "TYPE=eth" > /etc/net/ifaces/enp7s1/options
+echo -e "TYPE=vlan\nHOST=enp7s1\nVID={{VLAN_1}}" > /etc/net/ifaces/enp7s1.{{VLAN_1}}/options
+echo "{{HQ_SRV_IP_M1}}/{{M_VLAN1}}" > /etc/net/ifaces/enp7s1.{{VLAN_1}}/ipv4address
+echo "default via {{HQ_RTR_V100}}" > /etc/net/ifaces/enp7s1.{{VLAN_1}}/ipv4route
+cat <<EOF > /etc/net/ifaces/enp7s1.{{VLAN_1}}/resolv.conf
+search {{DOMAIN}}
 nameserver 8.8.8.8
-{{EXIT_MCEDIT}}
-
+EOF
 systemctl restart network
 
-ip -br -c a
+```
 
-useradd -u 1010 sshuser
-passwd sshuser
-{{PASS_MAIN}}
-usermod -aG wheel sshuser
+# 3. Users
 
-mcedit /etc/sudoers.d/sshuser
-WHEEL_USERS ALL=(ALL:ALL) NOPASSWD: ALL
-{{EXIT_MCEDIT}}
+```bash
+useradd -m -u {{UID_USER}} -G wheel {{SRV_USER}}
+echo "{{SRV_USER}}:{{PASS_MAIN}}" | chpasswd
+echo "{{SRV_USER}} ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/{{SRV_USER}}
+```
 
-mcedit /etc/openssh/banner
----------------------
-Authrized access only
-=====================
-<===================>
-{{EXIT_MCEDIT}}
+# 5. SSH
 
-mcedit /etc/openssh/sshd_config
-Port {{SSH_PORT_M1}}
-MaxAuthTries 2
-AllowUsers sshuser
-Banner /etc/openssh/banner
-{{EXIT_MCEDIT}}
-
+```bash
+echo "{{SSH_BANNER}}" > /etc/openssh/banner
+sed -i "s/#Port 22/Port {{SSH_PORT_M1}}/" /etc/openssh/sshd_config
+echo "MaxAuthTries {{SSH_MAX_TRIES}}" >> /etc/openssh/sshd_config
+echo "AllowUsers {{SRV_USER}}" >> /etc/openssh/sshd_config
+echo "Banner /etc/openssh/banner" >> /etc/openssh/sshd_config
 systemctl restart sshd
+```
 
-apt-update
-apt-get install bind bind-utils -y
+# 10. DNS
 
+```bash
+apt-get update && apt-get install bind bind-utils -y
 rndc-confgen -a -c /etc/bind/rndc.key
-
-mcedit /etc/bind/options.conf
+cat <<EOF > /etc/bind/options.conf
 options {
-//  version "unknown";
-    directory "/etc/bind/zone":
+    directory "/etc/bind/zone";
     dump-file "/var/run/named/named_dump.db";
-    statistics-file "/var/run/named/named.stats":
-    recursing-file "/var/run/named/named.recursing":
+    statistics-file "/var/run/named/named.stats";
+    recursing-file "/var/run/named/named.recursing";
     secroots-file "/var/run/named/named.secroots";
-    
     listen-on { any; };
-    forwarders { 77.88.8.7; 77.88.8.3; };
+    forwarders { {{DNS_FORWARDER}}; };
     recursion yes;
     allow-query { any; };
     allow-recursion { any; };
     dnssec-validation no;
 };
-{{EXIT_MCEDIT}}
+EOF
 
-mcedit /etc/bind/local.conf
-zone "{{DOMAIN}}" {
-type master;
-file "{{DOMAIN}}";
-};
-zone "168.192.in-addr.arpa" {
-type master;
-file "168.192.in-addr.arpa";
-};
-{{EXIT_MCEDIT}}
+mkdir -p /etc/bind/zone
+chown -R root:named /etc/bind/zone
+chmod 750 /etc/bind/zone
+chmod 755 /etc/bind
 
-cp /etc/bind/zone/empty /etc/bind/zone/{{{DOMAIN}},168.192.in-addr.arpa}
-mcedit /etc/bind/zone/{{DOMAIN}}
-IN      SOA     {{DOMAIN}}. root.{{DOMAIN}}.
-...
-@       IN      NS      hq-srv.{{DOMAIN}}.
+cat <<EOF > /etc/bind/local.conf
+zone "{{DOMAIN}}" { type master; file "{{DOMAIN}}"; };
+zone "{{REV_ZONE}}" { type master; file "{{REV_ZONE}}"; };
+EOF
+
+cat <<EOF > /etc/bind/zone/{{DOMAIN}}
+\$TTL 1D
+@       IN      SOA     hq-srv.{{DOMAIN}}. root.{{DOMAIN}}. ( 1 8H 2H 4W 1D )
+        IN      NS      hq-srv.{{DOMAIN}}.
 hq-srv  IN      A       {{HQ_SRV_IP_M1}}
 hq-rtr  IN      A       {{HQ_RTR_V100}}
-hq-cli  IN      A       {{HQ_SRV_IP_M1}}
+hq-cli  IN      A       {{NET_VLAN2_START}}
 br-rtr  IN      A       {{BR_RTR_INT_M1}}
 br-srv  IN      A       {{BR_SRV_IP_M1}}
-moodle  CNAME           hq-rtr.
-wiki    CNAME           hq-rtr.
-{{EXIT_MCEDIT}}
+docker  IN      A       {{ISP_IP_1}}
+web     IN      A       {{ISP_IP_2}}
+EOF
 
-mcedit /etc/bind/zone/168.192.in-addr.arpa
-IN      SOA     {{DOMAIN}}. root.{{DOMAIN}}.
-...
-@       IN      NS      {{DOMAIN}}.
-1.100   IN      PTR     hq-rtr.{{DOMAIN}}.
-2.100   IN      PTR     hq-srv.{{DOMAIN}}.
-2.200   IN      PTR     hq-cli.{{DOMAIN}}.
-{{EXIT_MCEDIT}}
+cat <<EOF > /etc/bind/zone/{{REV_ZONE}}
+\$TTL 1D
+@       IN      SOA     hq-srv.{{DOMAIN}}. root.{{DOMAIN}}. ( 1 8H 2H 4W 1D )
+        IN      NS      hq-srv.{{DOMAIN}}.
+{{PTR_HQ_RTR}}   IN      PTR     hq-rtr.{{DOMAIN}}.
+{{PTR_HQ_SRV}}   IN      PTR     hq-srv.{{DOMAIN}}.
+{{PTR_HQ_CLI}}   IN      PTR     hq-cli.{{DOMAIN}}.
+EOF
 
-mcedit /etc/net/ifaces/ens18/resolv.conf
-serch {{DOMAIN}}
+chown -R root:named /etc/bind/zone
+chmod 640 /etc/bind/zone/{{DOMAIN}} /etc/bind/zone/{{REV_ZONE}}
+
+cat <<EOF > /etc/net/ifaces/enp7s1.{{VLAN_1}}/resolv.conf
+search {{DOMAIN}}
 nameserver {{HQ_SRV_IP_M1}}
-{{EXIT_MCEDIT}}
+EOF
 
-chown :named /etc/bind/zone/{168.192.in-addr.arpa,{{DOMAIN}}}
-
-systemctl restart bind
 systemctl restart network
-systemctl enable bind
+systemctl enable --now bind
 ```
 
-## BR-RTR и HQ-RTR
+# 11. Timezone
 
 ```bash
-
-systemctl stop nftables
-systemctl start nftables
+timedatectl set-timezone Europe/Moscow
 
 ```
 
 ## BR-SRV
 
+# 1. Base
+
 ```bash
-
-hostnamect hostname BR-RTR.au-team.ru
-
-timedatectl set-timezone Europe/Moscow
-
-mcedit /etc/net/ifaces/ens18/options
-TYPE=eth
-{{EXIT_MCEDIT}}
-
-mcedit /etc/net/ifaces/ens18/ipv4router
-{{BR_SRV_IP_M1}}/28
-{{EXIT_MCEDIT}}
-
-mcedit /etc/net/ifaces/ens18/ipv4address
-default via {{BR_RTR_INT_M1}}
-{{EXIT_MCEDIT}}
-
-mcedit /etc/net/ifaces/ens18/resolv.conf
+hostnamectl hostname BR-SRV.{{DOMAIN}}; exec bash
+sed -i "s/HOSTNAME=localhost/HOSTNAME=br-srv.{{DOMAIN}}/g" /etc/sysconfig/network
+mkdir -p /etc/net/ifaces/enp7s1
+echo "TYPE=eth" > /etc/net/ifaces/enp7s1/options
+echo "{{BR_SRV_IP_M1}}/{{M_BR_SRV}}" > /etc/net/ifaces/enp7s1/ipv4address
+echo "default via {{BR_RTR_INT_M1}}" > /etc/net/ifaces/enp7s1/ipv4route
+cat <<EOF > /etc/net/ifaces/enp7s1/resolv.conf
+search {{DOMAIN}}
 nameserver {{HQ_SRV_IP_M1}}
-{{EXIT_MCEDIT}}
-
+EOF
 systemctl restart network
 
-useradd -u 1010 sshuser
-passwd sshuser
-usermod -aG wheel sshuser
+```
 
-mcedit /etc/sudoers.d/sshuser
-WHEEL_USERS ALL=(ALL:ALL) NOPASSWD: ALL
-{{EXIT_MCEDIT}}
+# 3. Users
 
-mcedit /etc/openssh/banner
+```bash
+useradd -m -u {{UID_USER}} -G wheel {{SRV_USER}}
+echo "{{SRV_USER}}:{{PASS_MAIN}}" | chpasswd
+echo "{{SRV_USER}} ALL=(ALL:ALL) NOPASSWD: ALL" > /etc/sudoers.d/{{SRV_USER}}
 
----------------------
-Authrized access only
-=====================
-<------------------->
-{{EXIT_MCEDIT}}
+```
 
-mcedit /etc/openssh/sshd_config
-Port {{SSH_PORT_M1}}
-MaxAuthTries 2
-AllowUsers sshuser
-Banner /etc/openssh/banner
-{{EXIT_MCEDIT}}
+# 5. SSH
 
-systemctl restart sshd 
+```bash
+echo "{{SSH_BANNER}}" > /etc/openssh/banner
+sed -i "s/#Port 22/Port {{SSH_PORT_M1}}/" /etc/openssh/sshd_config
+echo "MaxAuthTries {{SSH_MAX_TRIES}}" >> /etc/openssh/sshd_config
+echo "AllowUsers {{SRV_USER}}" >> /etc/openssh/sshd_config
+echo "Banner /etc/openssh/banner" >> /etc/openssh/sshd_config
+systemctl restart sshd
+
+```
+
+# 11. Timezone
+
+```bash
+timedatectl set-timezone Europe/Moscow
+
 ```
